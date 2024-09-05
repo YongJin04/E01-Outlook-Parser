@@ -207,8 +207,7 @@ def process_image_file(img_path):
 
 def E01_OST_PST_Parser(img_file):
     process_image_file(img_file)
-
-def format_title_two(filename):
+def format_title(filename):
     """Formats the title to include the directory name before '-' and append 'backup.pst'.
     The title is then centered in a line of '=' symbols for clear display in the console."""
     base_name = filename.split('-')[0]  # Extract base name from filename before '-'
@@ -277,7 +276,7 @@ def save_emails_to_csv(emails, filename, base_dir):
         relative_path = os.path.relpath(filename, start=base_dir)  # Calculate relative path for printing
         print(f"  Saving  : {relative_path} -> Saved  {len(emails)} emails")
 
-def PST_Mail_Parser():
+def process_pst_files():
     base_dir = os.path.join(os.getcwd(), 'extracted_files')  # Define the base directory for PST files
     pst_files = glob.glob(f"{base_dir}/**/*.pst", recursive=True)  # Find all PST files recursively
     constants = ensure_outlook_constants()  # Load constants used for processing emails
@@ -285,7 +284,7 @@ def PST_Mail_Parser():
     for pst_file in pst_files:
         pst_basename = os.path.basename(pst_file).split('.')[0]  # Get basename without extension
         directory_name = os.path.basename(os.path.dirname(pst_file))  # Get directory name of the PST file
-        print(format_title_two(directory_name))  # Format and print the directory title
+        print(format_title(directory_name))  # Format and print the directory title
         relative_path = os.path.relpath(pst_file, start=base_dir)  # Get relative path of the PST file
         print(f"  Parsing : {relative_path} ->", end=' ')
         root_folder = connect_to_outlook(pst_file)  # Connect to Outlook and get root folder
@@ -298,6 +297,9 @@ def PST_Mail_Parser():
         else:
             print("  Could not open the PST file. Please check if it's not corrupted and retry.")
 
+def PST_Mail_Parser():
+    process_pst_files()
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: E01-Mail-Parser.exe -<Option Name>")
@@ -305,17 +307,20 @@ if __name__ == "__main__":
 
     option = sys.argv[1]
 
-    if option not in ["-OutlookParser", "-MailParser"]:
-        print("Invalid option. Use '-OutlookParser' or '-MailParser'.")
+    if option not in ["-op", "-mp"]:
+        print("Invalid option. Use '-op' or '-mp'.")
         sys.exit(1)
 
-    if option == "-OutlookParser":
+    if option == "-op":
+        if len(sys.argv) < 2:
+            print("Usage: E01-Mail-Parser.exe -op <image file path> <image file path> ...")
+            sys.exit(1)
         try:
             for img_file in sys.argv[2:]:
                 E01_OST_PST_Parser(img_file)
         except Exception as e:
             print(f"An error occurred while processing with OutlookParser: {e}")
-    elif option == "-MailParser":
+    elif option == "-mp":
         try:
             PST_Mail_Parser()
         except Exception as e:
