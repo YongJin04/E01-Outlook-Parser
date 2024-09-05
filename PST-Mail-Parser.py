@@ -1,6 +1,7 @@
 import win32com.client
 import pandas as pd
 import os
+import glob
 
 def ensure_outlook_constants():
     """Ensure that Outlook constants are loaded for script usage."""
@@ -29,15 +30,15 @@ def read_folder_messages(folder, constants):
             if message.Class == constants.olMail:
                 received_time = getattr(message, 'ReceivedTime', None)
                 mail_data = {
-                    "mail_index": folder.Name,
-                    "sender_name": message.SenderName,
-                    "sender_account": message.SenderEmailAddress,
-                    "receiver_account": message.To,
-                    "cc_account": message.CC,
-                    "received_time": received_time.strftime('%Y-%m-%d %H:%M:%S') if received_time else 'N/A',
-                    "title": message.Subject,
-                    "body": message.Body[:2000],
-                    "attachment_file_name": ', '.join([attachment.FileName for attachment in message.Attachments]) if message.Attachments.Count > 0 else 'None'
+                    "mail_index": folder.Name or '',
+                    "sender_name": getattr(message, 'SenderName', ''),
+                    "sender_account": getattr(message, 'SenderEmailAddress', ''),
+                    "receiver_account": getattr(message, 'To', ''),
+                    "cc_account": getattr(message, 'CC', ''),
+                    "received_time": received_time.strftime('%Y-%m-%d %H:%M:%S') if received_time else '',
+                    "title": getattr(message, 'Subject', ''),
+                    "body": getattr(message, 'Body', '')[:10000],
+                    "attachment_file_name": ', '.join([attachment.FileName for attachment in message.Attachments]) if message.Attachments.Count > 0 else ''
                 }
                 data.append(mail_data)
         except Exception as e:
@@ -53,43 +54,28 @@ def process_all_folders(folders, constants):
         all_data.extend(process_all_folders(folder.Folders, constants))
     return all_data
 
-def save_emails_to_csv(emails, filename='emails.csv'):
+def save_emails_to_csv(emails, filename):
     """Save the list of email dictionaries to a CSV file."""
     if emails:
         df = pd.DataFrame(emails)
-        df.to_csv(filename, index=False, encoding='utf-8-sig')
+        df.to_csv(filename, index=False, na_rep='', encoding='utf-8-sig')  # Using na_rep to replace NaN with empty string
         print(f"Saved {len(emails)} emails to {filename}")
-        # Call the function to delete tmp files after saving the CSV
 
-def main(pst_file_path):
-    if not os.path.exists(pst_file_path):
-        print(f"File does not exist: {pst_file_path}")
-        return
-
+def process_pst_files():
+    base_dir = os.path.join(os.getcwd(), 'extracted_files')
+    pst_files = glob.glob(f"{base_dir}/**/*.pst", recursive=True)
     constants = ensure_outlook_constants()
-    root_folder = connect_to_outlook(pst_file_path)
-    if root_folder:
-        print(f"Successfully connected to {pst_file_path}")
-        emails = process_all_folders([root_folder], constants)
-        print(f"Parsed {len(emails)} emails.")
-        save_emails_to_csv(emails)
-    else:
-        print("Could not open the PST file. Please check if it's not corrupted and retry.")
+
+    for pst_file in pst_files:
+        print(f"Processing: {pst_file}")
+        root_folder = connect_to_outlook(pst_file)
+        if root_folder:
+            emails = process_all_folders([root_folder], constants)
+            csv_filename = os.path.splitext(os.path.basename(pst_file))[0] + '.csv'
+            save_emails_to_csv(emails, os.path.join(os.path.dirname(pst_file), csv_filename))
+            print(f"Parsed {len(emails)} emails.")
+        else:
+            print("Could not open the PST file. Please check if it's not corrupted and retry.")
 
 if __name__ == "__main__":
-    pst_file_path = input("Enter the path to your PST file: ")
-    
-    if not os.path.exists(pst_file_path):
-        print(f"File does not exist: {pst_file_path}")
-        exit()
-
-    constants = ensure_outlook_constants()
-    root_folder = connect_to_outlook(pst_file_path)
-    if root_folder:
-        print(f"Successfully connected to {pst_file_path}")
-        emails = process_all_folders([root_folder], constants)
-        print(f"Parsed {len(emails)} emails.")
-        save_emails_to_csv(emails)
-    else:
-        print("Could not open the PST file. Please check if it's not corrupted and retry.")
-
+    process_pst_files()
