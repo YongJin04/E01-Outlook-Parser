@@ -53,7 +53,7 @@ def format_title(title):
 def print_all_partitions_with_windows_directory(img_info, output_dir, img_path):
     """Prints partition and user information for partitions containing a Windows directory."""
     title = format_title(os.path.basename(img_path))
-    print(title)
+    print(f'\n{title}')
     try:
         partition_table = pytsk3.Volume_Info(img_info)
         for partition in partition_table:
@@ -91,13 +91,20 @@ def print_users_directories_with_outlook(fs, output_dir):
                 if dir_name not in [".", ".."]:
                     if contains_appdata_directory(fs, f"/Users/{dir_name}"):
                         ost_files = extract_ost_files(fs, f"/Users/{dir_name}/AppData/Local/Microsoft/Outlook", output_dir)
+                        pst_files = extract_pst_files(fs, f"/Users/{dir_name}/OneDrive/문서/Outlook Files", output_dir)
                         if ost_files:
-                            print(f"    User Name : {dir_name} (Outlook O)")
+                            print(f"    User Name : {dir_name}")
+                            print("        (Outlook-OST-Directory O)")
                             for file in ost_files:
-                                print(f"        -> {file}")
+                                print(f"            -> {file}")
+                            list_outlook_files(fs, dir_name)
                             extracted_files += len(ost_files)
+                            extracted_files += len(pst_files)
                         else:
-                            print(f"    User Name : {dir_name} (Outlook X)")
+                            print(f"    User Name : {dir_name}")
+                            print("        (Outlook-OST-Directory X)")
+                            list_outlook_files(fs, dir_name)
+                            extracted_files += len(pst_files)
     except Exception as e:
         print(f" Failed to list Users subdirectories: {str(e)}")
     return extracted_files
@@ -123,6 +130,43 @@ def extract_ost_files(fs, path, output_dir):
             if entry.info.meta and entry.info.meta.type is pytsk3.TSK_FS_META_TYPE_REG:
                 file_name = entry.info.name.name.decode()
                 if file_name.lower().endswith('.ost'):
+                    file_path = os.path.join(output_dir, file_name)
+                    with open(file_path, 'wb') as f:
+                        file_data = entry.read_random(0, entry.info.meta.size)
+                        f.write(file_data)
+                    extracted_files.append(file_name)
+    except Exception as e:
+        # Suppress error message printing
+        pass
+    return extracted_files
+
+def list_outlook_files(fs, dir_name):
+    """Lists filenames in the Outlook Files directory for a user."""
+    path = f"/Users/{dir_name}/OneDrive/문서/Outlook Files"
+    try:
+        outlook_files_dir = fs.open_dir(path=path)
+        has_files = False
+        print("        (Outlook-PST-Directory O)")
+        for entry in outlook_files_dir:
+            if entry.info.meta and entry.info.meta.type == pytsk3.TSK_FS_META_TYPE_REG:
+                file_name = entry.info.name.name.decode()
+                print(f"            -> {file_name}")
+        has_files = True
+                
+        if not has_files:
+            print("        No files in directory.")
+    except Exception as e:
+        print("        (Outlook-PST-Directory X)")
+
+def extract_pst_files(fs, path, output_dir):
+    """Extracts OST files from the specified Outlook directory."""
+    extracted_files = []
+    try:
+        outlook_dir = fs.open_dir(path=path)
+        for entry in outlook_dir:
+            if entry.info.meta and entry.info.meta.type is pytsk3.TSK_FS_META_TYPE_REG:
+                file_name = entry.info.name.name.decode()
+                if file_name.lower().endswith('.pst'):
                     file_path = os.path.join(output_dir, file_name)
                     with open(file_path, 'wb') as f:
                         file_data = entry.read_random(0, entry.info.meta.size)
