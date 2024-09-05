@@ -205,13 +205,8 @@ def process_image_file(img_path):
     if img_info and img_type == "E01":
         img_info.close()
 
-def E01_OST_PST_Parser():
-    if len(sys.argv) < 2:
-        print("Usage: python script.py <E01 file path 1> <E01 file path 2> ...")
-        sys.exit(1)
-    
-    for img_file in sys.argv[1:]:
-        process_image_file(img_file)
+def E01_OST_PST_Parser(img_file):
+    process_image_file(img_file)
 
 def format_title(filename):
     """Formats the title to include the directory name before '-' and append 'backup.pst'.
@@ -309,7 +304,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
     option = sys.argv[1]
-    file_path = sys.argv[2]
 
     if option not in ["-OutlookParser", "-MailParser"]:
         print("Invalid option. Use '-OutlookParser' or '-MailParser'.")
@@ -317,7 +311,8 @@ if __name__ == "__main__":
 
     if option == "-OutlookParser":
         try:
-            E01_OST_PST_Parser(file_path)
+            for img_file in sys.argv[2:]:
+                E01_OST_PST_Parser(img_file)
         except Exception as e:
             print(f"An error occurred while processing with OutlookParser: {e}")
     elif option == "-MailParser":
