@@ -1,7 +1,7 @@
 import win32com.client
 import pandas as pd
-import os
 import glob
+import os
 
 def ensure_outlook_constants():
     """Ensure that Outlook constants are loaded for script usage."""
