@@ -46,7 +46,7 @@ def read_image_file(imgpath, imgtype):
         img_info = pytsk3.Img_Info(imgpath)
     return img_info
 
-def format_title(title):
+def format_title_one(title):
     """Formats the title for consistent display length across image file outputs."""
     total_length = 50  # Desired total length of title bar
     left_padding = (total_length - len(title)) // 2
@@ -55,7 +55,7 @@ def format_title(title):
 
 def print_all_partitions_with_windows_directory(img_info, output_dir, img_path):
     """Prints partition and user information for partitions containing a Windows directory."""
-    title = format_title(os.path.basename(img_path))
+    title = format_title_one(os.path.basename(img_path))
     print(f'\n{title}')
     try:
         partition_table = pytsk3.Volume_Info(img_info)
@@ -208,7 +208,7 @@ def process_image_file(img_path):
 def E01_OST_PST_Parser(img_file):
     process_image_file(img_file)
 
-def format_title(filename):
+def format_title_two(filename):
     """Formats the title to include the directory name before '-' and append 'backup.pst'.
     The title is then centered in a line of '=' symbols for clear display in the console."""
     base_name = filename.split('-')[0]  # Extract base name from filename before '-'
@@ -285,7 +285,7 @@ def PST_Mail_Parser():
     for pst_file in pst_files:
         pst_basename = os.path.basename(pst_file).split('.')[0]  # Get basename without extension
         directory_name = os.path.basename(os.path.dirname(pst_file))  # Get directory name of the PST file
-        print(format_title(directory_name))  # Format and print the directory title
+        print(format_title_two(directory_name))  # Format and print the directory title
         relative_path = os.path.relpath(pst_file, start=base_dir)  # Get relative path of the PST file
         print(f"  Parsing : {relative_path} ->", end=' ')
         root_folder = connect_to_outlook(pst_file)  # Connect to Outlook and get root folder
@@ -299,8 +299,8 @@ def PST_Mail_Parser():
             print("  Could not open the PST file. Please check if it's not corrupted and retry.")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python script.py -option <file path>")
+    if len(sys.argv) < 2:
+        print("Usage: E01-Mail-Parser.exe -<Option Name>")
         sys.exit(1)
 
     option = sys.argv[1]
