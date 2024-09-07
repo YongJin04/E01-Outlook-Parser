@@ -1,97 +1,68 @@
-import win32com.client
-import pandas as pd
-import glob
+from aspose.email.storage.pst import PersonalStorage, StandardIpmFolder
+from aspose.email.mapi import MapiMessage, ContactSaveFormat
+from datetime import timezone
 import os
+import glob
+import csv
 
-def format_title(filename):
-    """Formats the title to include the directory name before '-' and append 'backup.pst'.
-    The title is then centered in a line of '=' symbols for clear display in the console."""
-    base_name = filename.split('-')[0]  # Extract base name from filename before '-'
-    title = f"{base_name}:backup.pst"  # Append ':backup.pst' to the base name for the title
-    total_length = 70  # Desired total length of title bar
-    left_padding = (total_length - len(title)) // 2  # Calculate left padding for centering
-    right_padding = total_length - (left_padding + len(title))  # Calculate right padding for centering
-    return '=' * left_padding + title + '=' * right_padding  # Return the formatted title
+def load_pst_messages(pst, folder_name):
+    folder = pst.root_folder.get_sub_folder(folder_name)
+    if folder is None:
+        return []
+    return folder.get_contents()
 
-def ensure_outlook_constants():
-    """Ensure that Outlook constants are loaded for script usage, essential for identifying email types."""
-    outlook = win32com.client.Dispatch("Outlook.Application")
-    win32com.client.gencache.EnsureDispatch('Outlook.Application')  # Force generation of cache for constants
-    constants = win32com.client.constants  # Load Outlook constants
-    return constants
+def display_message_info(messages, pst, folder_name, writer):
+    for message_info in messages:
+        mapi_message = pst.extract_message(message_info)  # Extract MapiMessage
+        # Extract and handle multiple recipients if any
+        receiver_emails = mapi_message.display_to.split(';') if mapi_message.display_to else ['']
+        
+        # Collect email data for CSV output
+        email_data = {
+            "folder_name": folder_name,
+            "sender_email": mapi_message.sender_email_address if mapi_message.sender_email_address else '',
+            "receiver_emails": "; ".join(receiver_emails).strip(),  # Join back for consistent CSV output, or handle individually
+            "cc_emails": mapi_message.display_cc if mapi_message.display_cc else '',
+            "delivery_time_datetime": mapi_message.delivery_time if mapi_message.delivery_time else '',
+            "delivery_time_unixtime": int(mapi_message.delivery_time.replace(tzinfo=timezone.utc).timestamp()) if mapi_message.delivery_time else '',
+            "subject": mapi_message.subject if mapi_message.subject else '',
+            "body": mapi_message.body[:200] if mapi_message.body else '',
+            "attachments": ", ".join([attachment.display_name for attachment in mapi_message.attachments]) if mapi_message.attachments else ''
+        }
+        writer.writerow(email_data)
 
-def connect_to_outlook(pst_file_path):
-    """Connect to Outlook using a specified PST file path and add the PST file to the Outlook profile."""
-    outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")  # Get MAPI namespace
-    try:
-        outlook.AddStore(pst_file_path)  # Attempt to add PST file to the session
-        root_folder = outlook.Folders.Item(outlook.Folders.Count)  # Get the last folder (added PST)
-        return root_folder
-    except Exception as e:
-        print(f"  Failed to add PST file: {e}")  # Error handling for PST file addition
-        return None
+def find_pst_files(directory):
+    # Search for all PST files in the specified directory
+    return glob.glob(os.path.join(directory, '**', '*.pst'), recursive=True)
 
-def read_folder_messages(folder, constants):
-    """Read and parse email messages from a specified folder using Outlook constants."""
-    messages = folder.Items
-    data = []
-    for message in messages:
-        try:
-            if message.Class == constants.olMail:  # Filter only email messages
-                received_time = getattr(message, 'ReceivedTime', None)  # Safely get the received time
-                mail_data = {
-                    "mail_index": folder.Name or '',
-                    "sender_name": getattr(message, 'SenderName', ''),
-                    "sender_account": getattr(message, 'SenderEmailAddress', ''),
-                    "receiver_account": getattr(message, 'To', ''),
-                    "cc_account": getattr(message, 'CC', ''),
-                    "received_time": received_time.strftime('%Y-%m-%d %H:%M:%S') if received_time else '',
-                    "title": getattr(message, 'Subject', ''),
-                    "body": getattr(message, 'Body', '')[:10000],
-                    "attachment_file_name": ', '.join([attachment.FileName for attachment in message.Attachments]) if message.Attachments.Count > 0 else ''
-                }
-                data.append(mail_data)  # Collect all relevant mail data
-        except Exception as e:
-            print(f"  Error reading message in '{folder.Name}': {e}")
-    return data
-
-def process_all_folders(folders, constants):
-    """Recursively process all folders and compile email data."""
-    all_data = []
-    for folder in folders:
-        folder_data = read_folder_messages(folder, constants)
-        all_data.extend(folder_data)
-        all_data.extend(process_all_folders(folder.Folders, constants))  # Recursively process subfolders
-    return all_data
-
-def save_emails_to_csv(emails, filename, base_dir):
-    """Save the list of email dictionaries to a CSV file."""
-    if emails:
-        df = pd.DataFrame(emails)
-        df.to_csv(filename, index=False, na_rep='', encoding='utf-8-sig')  # Save DataFrame to CSV
-        relative_path = os.path.relpath(filename, start=base_dir)  # Calculate relative path for printing
-        print(f"  Saving  : {relative_path} -> Saved  {len(emails)} emails")
-
-def process_pst_files():
-    base_dir = os.path.join(os.getcwd(), 'extracted_files')  # Define the base directory for PST files
-    pst_files = glob.glob(f"{base_dir}/**/*.pst", recursive=True)  # Find all PST files recursively
-    constants = ensure_outlook_constants()  # Load constants used for processing emails
-
-    for pst_file in pst_files:
-        pst_basename = os.path.basename(pst_file).split('.')[0]  # Get basename without extension
-        directory_name = os.path.basename(os.path.dirname(pst_file))  # Get directory name of the PST file
-        print(format_title(directory_name))  # Format and print the directory title
-        relative_path = os.path.relpath(pst_file, start=base_dir)  # Get relative path of the PST file
-        print(f"  Parsing : {relative_path} ->", end=' ')
-        root_folder = connect_to_outlook(pst_file)  # Connect to Outlook and get root folder
-        if root_folder:
-            emails = process_all_folders([root_folder], constants)  # Process all folders in the PST file
-            print(f"Parsed {len(emails)} emails")
-            csv_filename = os.path.splitext(pst_basename)[0] + '.csv'  # Create CSV filename
-            csv_path = os.path.join(os.path.dirname(pst_file), csv_filename)  # Define full path for CSV
-            save_emails_to_csv(emails, csv_path, base_dir)  # Save emails to CSV
-        else:
-            print("  Could not open the PST file. Please check if it's not corrupted and retry.")
+def create_csv_for_pst(pst_file, messages_info):
+    csv_filename = f"{os.path.splitext(pst_file)[0]}.csv"
+    with open(csv_filename, 'w', newline='', encoding='utf-8-sig') as csvfile:  # utf-8-sig for proper encoding in Excel
+        fieldnames = ["folder_name", "sender_email", "receiver_emails", "cc_emails", "delivery_time_datetime", "delivery_time_unixtime", "subject", "body", "attachments"]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for folder_name, messages in messages_info.items():
+            display_message_info(messages, pst, folder_name, writer)
+    pst_base_name = os.path.basename(pst_file)
+    csv_base_name = os.path.basename(csv_filename)
+    print(f"CSV File Created : {os.path.dirname(csv_filename)}\\{pst_base_name} -> {csv_base_name}")  # Updated print statement
+    return csv_filename
 
 if __name__ == "__main__":
-    process_pst_files()  # Entry point to process all PST files
+    directory_path = os.path.join(".", "extracted_files")
+    pst_files = find_pst_files(directory_path)
+    total_emails = 0  # Initialize counter for total emails
+    csv_files_created = 0  # Counter for CSV files
+
+    for pst_file in pst_files:
+        with PersonalStorage.from_file(pst_file) as pst:
+            folder_names = ["Inbox", "Outbox", "Sent Items", "Deleted Items", "Drafts", "Junk Email"]
+            messages_info = {}
+            for folder_name in folder_names:
+                messages = load_pst_messages(pst, folder_name)
+                messages_info[folder_name] = messages
+                total_emails += len(messages)  # Sum up all messages
+            csv_file = create_csv_for_pst(pst_file, messages_info)  # Create a CSV file for each PST
+            csv_files_created += 1
+
+    print(f"\nTotal Number Of CSV Files Created / Parsed Emails: {csv_files_created}, {total_emails}\n")
