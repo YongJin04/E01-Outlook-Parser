@@ -208,6 +208,8 @@ def process_image_file(img_path):
 
     if img_info and img_type == "E01":
         img_info.close()
+        
+# =============================================================== #
 
 def load_pst_messages(pst, folder_name):
     folder = pst.root_folder.get_sub_folder(folder_name)
