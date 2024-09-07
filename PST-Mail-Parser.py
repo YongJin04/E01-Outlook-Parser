@@ -23,7 +23,7 @@ def display_message_info(messages, pst, folder_name, writer):
             "sender_email": mapi_message.sender_email_address if mapi_message.sender_email_address else '',
             "receiver_emails": "; ".join(receiver_emails).strip(),  # Join back for consistent CSV output, or handle individually
             "cc_emails": mapi_message.display_cc if mapi_message.display_cc else '',
-            "delivery_time_datetime": mapi_message.delivery_time if mapi_message.delivery_time else '',
+            # "delivery_time_datetime": mapi_message.delivery_time if mapi_message.delivery_time else '',
             "delivery_time_unixtime": int(mapi_message.delivery_time.replace(tzinfo=timezone.utc).timestamp()) if mapi_message.delivery_time else '',
             "subject": mapi_message.subject if mapi_message.subject else '',
             "body": mapi_message.body[:200] if mapi_message.body else '',
