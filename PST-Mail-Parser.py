@@ -1,9 +1,9 @@
 from aspose.email.storage.pst import PersonalStorage, StandardIpmFolder
 from aspose.email.mapi import MapiMessage, ContactSaveFormat
 from datetime import timezone
-import os
 import glob
 import csv
+import os
 
 def load_pst_messages(pst, folder_name):
     folder = pst.root_folder.get_sub_folder(folder_name)
