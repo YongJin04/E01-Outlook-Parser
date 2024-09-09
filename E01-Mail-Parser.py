@@ -280,4 +280,5 @@ if __name__ == "__main__":
     
     for img_file in sys.argv[1:]:
         process_image_file(img_file)
-        parse_mail()
+    
+    parse_mail()
