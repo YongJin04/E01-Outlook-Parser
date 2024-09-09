@@ -2,11 +2,13 @@ from aspose.email.storage.pst import PersonalStorage, StandardIpmFolder
 from aspose.email.mapi import MapiMessage, ContactSaveFormat
 from datetime import timezone
 import win32com.client
+from tqdm import tqdm
 import pandas as pd
 import hashlib
 import pytsk3
 import pyewf
 import glob
+import time
 import sys
 import csv
 import os
@@ -229,6 +231,7 @@ def display_message_info(messages, pst, folder_name, writer):
             "sender_email": mapi_message.sender_email_address if mapi_message.sender_email_address else '',
             "receiver_emails": "; ".join(receiver_emails).strip(),  # Join back for consistent CSV output, or handle individually
             "cc_emails": mapi_message.display_cc if mapi_message.display_cc else '',
+            "bcc_emails": mapi_message.display_bcc if mapi_message.display_bcc else '',
             # "delivery_time_datetime": mapi_message.delivery_time if mapi_message.delivery_time else '',
             "delivery_time_unixtime": int(mapi_message.delivery_time.replace(tzinfo=timezone.utc).timestamp()) if mapi_message.delivery_time else '',
             "subject": mapi_message.subject if mapi_message.subject else '',
@@ -272,6 +275,8 @@ def parse_mail():
             csv_files_created += 1
 
     print(f"\nTotal Number Of CSV Files Created / Parsed Emails: {csv_files_created}, {total_emails}\n")
+
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
