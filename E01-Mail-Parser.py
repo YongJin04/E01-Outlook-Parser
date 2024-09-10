@@ -13,6 +13,8 @@ import sys
 import csv
 import os
 
+# ==================== E01_to_ost_and_pst ==================== #
+
 class EWFImgInfo(pytsk3.Img_Info):
     """This class extends pytsk3.Img_Info to support EWF image files."""
     def __init__(self, ewf_handle):
@@ -78,7 +80,7 @@ def print_all_partitions_with_windows_directory(img_info, output_dir, img_path):
         print(f" Failed to read partition info: {str(e)}")
 
 def has_windows_directory(fs):
-    """Checks if a 'Windows' directory exists in the file system."""
+    """Checks if a 'Windows' directory exists under root directory in the file system."""
     try:
         root_dir = fs.open_dir(path="/")
         for entry in root_dir:
@@ -99,20 +101,16 @@ def print_users_directories_with_outlook(fs, output_dir):
                 dir_name = entry.info.name.name.decode()
                 if dir_name not in [".", ".."]:
                     if contains_appdata_directory(fs, f"/Users/{dir_name}"):
-                        ost_files = extract_ost_files(fs, f"/Users/{dir_name}/AppData/Local/Microsoft/Outlook", output_dir)
-                        pst_files = extract_pst_files(fs, f"/Users/{dir_name}/OneDrive/문서/Outlook Files", output_dir)
+                        ost_files = extract_files(fs, f"/Users/{dir_name}/AppData/Local/Microsoft/Outlook", output_dir, '.ost')
+                        pst_files = extract_files(fs, f"/Users/{dir_name}/OneDrive/문서/Outlook Files", output_dir, '.pst')
                         if ost_files:
                             print(f"    User Name : {dir_name}")
                             print("        (Outlook-OST-Directory O)")
                             for file in ost_files:
-                                print(f"            -> {file}")
+                                print(f"            - {file}")
                             list_outlook_files(fs, dir_name)
+
                             extracted_files += len(ost_files)
-                            extracted_files += len(pst_files)
-                        else:
-                            print(f"    User Name : {dir_name}")
-                            print("        (Outlook-OST-Directory X)")
-                            list_outlook_files(fs, dir_name)
                             extracted_files += len(pst_files)
     except Exception as e:
         print(f" Failed to list Users subdirectories: {str(e)}")
@@ -130,7 +128,7 @@ def contains_appdata_directory(fs, path):
         print(f" Error checking for 'AppData' directory in {path}: {str(e)}")
     return False
 
-def extract_ost_files(fs, path, output_dir):
+def extract_files(fs, path, output_dir, extension):
     """Extracts OST files from the specified Outlook directory."""
     extracted_files = []
     try:
@@ -138,7 +136,7 @@ def extract_ost_files(fs, path, output_dir):
         for entry in outlook_dir:
             if entry.info.meta and entry.info.meta.type is pytsk3.TSK_FS_META_TYPE_REG:
                 file_name = entry.info.name.name.decode()
-                if file_name.lower().endswith('.ost'):
+                if file_name.lower().endswith(extension):
                     file_path = os.path.join(output_dir, file_name)
                     with open(file_path, 'wb') as f:
                         file_data = entry.read_random(0, entry.info.meta.size)
@@ -159,7 +157,16 @@ def list_outlook_files(fs, dir_name):
         for entry in outlook_files_dir:
             if entry.info.meta and entry.info.meta.type == pytsk3.TSK_FS_META_TYPE_REG:
                 file_name = entry.info.name.name.decode()
-                print(f"            -> {file_name}")
+                print(f"            - {file_name}", end="")
+                # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         has_files = True
                 
         if not has_files:
@@ -167,26 +174,7 @@ def list_outlook_files(fs, dir_name):
     except Exception as e:
         print("        (Outlook-PST-Directory X)")
 
-def extract_pst_files(fs, path, output_dir):
-    """Extracts OST files from the specified Outlook directory."""
-    extracted_files = []
-    try:
-        outlook_dir = fs.open_dir(path=path)
-        for entry in outlook_dir:
-            if entry.info.meta and entry.info.meta.type is pytsk3.TSK_FS_META_TYPE_REG:
-                file_name = entry.info.name.name.decode()
-                if file_name.lower().endswith('.pst'):
-                    file_path = os.path.join(output_dir, file_name)
-                    with open(file_path, 'wb') as f:
-                        file_data = entry.read_random(0, entry.info.meta.size)
-                        f.write(file_data)
-                    extracted_files.append(file_name)
-    except Exception as e:
-        # Suppress error message printing
-        pass
-    return extracted_files
-
-def process_image_file(img_path):
+def E01_to_ost_and_pst(img_path):
     """Processes each image file, reads the file, and extracts OST files."""
     img_type = get_file_type(img_path)
     hasher = hashlib.sha256()
@@ -211,7 +199,10 @@ def process_image_file(img_path):
     if img_info and img_type == "E01":
         img_info.close()
         
-# =============================================================== #
+# ======================== pst_to_csv ======================== #
+
+def find_pst_files(directory):
+    return glob.glob(os.path.join(directory, '**', '*.pst'), recursive=True)
 
 def load_pst_messages(pst, folder_name):
     folder = pst.root_folder.get_sub_folder(folder_name)
@@ -221,18 +212,13 @@ def load_pst_messages(pst, folder_name):
 
 def display_message_info(messages, pst, folder_name, writer):
     for message_info in messages:
-        mapi_message = pst.extract_message(message_info)  # Extract MapiMessage
-        # Extract and handle multiple recipients if any
+        mapi_message = pst.extract_message(message_info)
         receiver_emails = mapi_message.display_to.split(';') if mapi_message.display_to else ['']
-        
-        # Collect email data for CSV output
         email_data = {
             "folder_name": folder_name,
             "sender_email": mapi_message.sender_email_address if mapi_message.sender_email_address else '',
-            "receiver_emails": "; ".join(receiver_emails).strip(),  # Join back for consistent CSV output, or handle individually
+            "receiver_emails": "; ".join(receiver_emails).strip(),
             "cc_emails": mapi_message.display_cc if mapi_message.display_cc else '',
-            "bcc_emails": mapi_message.display_bcc if mapi_message.display_bcc else '',
-            # "delivery_time_datetime": mapi_message.delivery_time if mapi_message.delivery_time else '',
             "delivery_time_unixtime": int(mapi_message.delivery_time.replace(tzinfo=timezone.utc).timestamp()) if mapi_message.delivery_time else '',
             "subject": mapi_message.subject if mapi_message.subject else '',
             "body": mapi_message.body[:200] if mapi_message.body else '',
@@ -240,28 +226,22 @@ def display_message_info(messages, pst, folder_name, writer):
         }
         writer.writerow(email_data)
 
-def find_pst_files(directory):
-    # Search for all PST files in the specified directory
-    return glob.glob(os.path.join(directory, '**', '*.pst'), recursive=True)
-
-def create_csv_for_pst(pst_file, messages_info):
+def create_csv_for_pst(pst, pst_file, messages_info):
     csv_filename = f"{os.path.splitext(pst_file)[0]}.csv"
-    with open(csv_filename, 'w', newline='', encoding='utf-8-sig') as csvfile:  # utf-8-sig for proper encoding in Excel
-        fieldnames = ["folder_name", "sender_email", "receiver_emails", "cc_emails", "delivery_time_datetime", "delivery_time_unixtime", "subject", "body", "attachments"]
+    with open(csv_filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
+        fieldnames = ["folder_name", "sender_email", "receiver_emails", "cc_emails", "delivery_time_unixtime", "subject", "body", "attachments"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for folder_name, messages in messages_info.items():
             display_message_info(messages, pst, folder_name, writer)
     pst_base_name = os.path.basename(pst_file)
     csv_base_name = os.path.basename(csv_filename)
-    print(f"CSV File Created : {os.path.dirname(csv_filename)}\\{pst_base_name} -> {csv_base_name}")  # Updated print statement
+    print(f"CSV File Created : {pst_base_name} -> {csv_base_name}")
     return csv_filename
 
-def parse_mail():
+def pst_to_csv():
     directory_path = os.path.join(".", "extracted_files")
     pst_files = find_pst_files(directory_path)
-    total_emails = 0  # Initialize counter for total emails
-    csv_files_created = 0  # Counter for CSV files
 
     for pst_file in pst_files:
         with PersonalStorage.from_file(pst_file) as pst:
@@ -270,13 +250,32 @@ def parse_mail():
             for folder_name in folder_names:
                 messages = load_pst_messages(pst, folder_name)
                 messages_info[folder_name] = messages
-                total_emails += len(messages)  # Sum up all messages
-            csv_file = create_csv_for_pst(pst_file, messages_info)  # Create a CSV file for each PST
-            csv_files_created += 1
+            create_csv_for_pst(pst, pst_file, messages_info)
 
-    print(f"\nTotal Number Of CSV Files Created / Parsed Emails: {csv_files_created}, {total_emails}\n")
+# ==================== merge_and_sort_csv_files ==================== #
 
+def merge_and_sort_csv_files(directory):
+    csv_files = glob.glob(os.path.join(directory, '**', '*.csv'), recursive=True)
+    all_data = []
+    fieldnames = ["folder_name", "sender_email", "receiver_emails", "cc_emails", "delivery_time_unixtime", "subject", "body", "attachments"]
+    num_files_merged = len(csv_files)  # Count the number of CSV files to merge
+    
+    for csv_file in csv_files:
+        with open(csv_file, 'r', newline='', encoding='utf-8-sig') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                all_data.append(row)
 
+    all_data.sort(key=lambda x: int(x['delivery_time_unixtime']) if x['delivery_time_unixtime'] else 0)
+
+    merged_filename = os.path.join(".", 'extract.csv')
+    with open(merged_filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for data in all_data:
+            writer.writerow(data)
+
+    print(f"\n{num_files_merged} CSV files merged and sorted into '{merged_filename}'\n")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -284,6 +283,8 @@ if __name__ == "__main__":
         sys.exit(1)
     
     for img_file in sys.argv[1:]:
-        process_image_file(img_file)
+        E01_to_ost_and_pst(img_file)
     
-    parse_mail()
+    pst_to_csv()
+    merge_and_sort_csv_files(os.path.join(".", "extracted_files"))
+    
