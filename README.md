@@ -5,5 +5,5 @@ pip install Aspose.Email-for-Python-via-NET <br>
 pip install libewf-python <br>
 pip install pytsk3 <br><br>
 
-pyinstaller --onefile --hidden-import="Aspose.Email-for-Python-via-NET" --icon=./jewelrybox.ico E01-Mail-Parser.py
+pyinstaller --onefile --icon=./jewelrybox.ico --hidden-import=aspose --hidden-import=aspose.email --hidden-import=aspose.email.storage.pst --hidden-import=aspose.email.storage.pst.PersonalStorage --hidden-import=aspose.email.storage.pst.StandardIpmFolder --clean E01-Mail-Parser.py
 
