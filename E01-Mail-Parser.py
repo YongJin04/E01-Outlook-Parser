@@ -183,7 +183,7 @@ def load_pst_messages(pst, folder_name):
 def create_csv_for_pst(pst, pst_file, messages_info):
     csv_filename = f"{os.path.splitext(pst_file)[0]}.csv"
     with open(csv_filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
-        fieldnames = ["folder_name", "sender_email", "receiver_emails", "cc_emails", "delivery_time_unixtime", "subject", "body", "attachments"]
+        fieldnames = ["folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "delivery_time", "subject", "body", "attachments"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for folder_name, messages in messages_info.items():
@@ -199,14 +199,26 @@ def display_message_info(messages, pst, folder_name, writer):
         email_data = {
             "folder_name": folder_name,
             "sender_email": mapi_message.sender_email_address if mapi_message.sender_email_address else '',
+            "sender_name": (format_kor_name(mapi_message.sender_name if mapi_message.sender_name else '')).replace(" ", ""),
             "receiver_emails": "; ".join(receiver_emails).strip(),
             "cc_emails": mapi_message.display_cc if mapi_message.display_cc else '',
-            "delivery_time_unixtime": int(mapi_message.delivery_time.replace(tzinfo=timezone.utc).timestamp()) if mapi_message.delivery_time else '',
+            "delivery_time": int(mapi_message.delivery_time.strftime("%Y%m%d%H%M%S")) if mapi_message.delivery_time else '',
             "subject": mapi_message.subject if mapi_message.subject else '',
             "body": mapi_message.body[:2000] if mapi_message.body else '',
             "attachments": ", ".join([attachment.display_name for attachment in mapi_message.attachments]) if mapi_message.attachments else ''
         }
         writer.writerow(email_data)
+
+def format_kor_name(name):
+    parts = name.split()
+    if len(parts) != 2:
+        return name
+    if len(parts[0]) == 1 and len(parts[1]) == 2:
+        return name
+    elif len(parts[0]) == 2 and len(parts[1]) == 1:
+        return parts[1] + ' ' + parts[0]
+    else:
+        return name
 
 def pst_to_csv(pst_file):
     with PersonalStorage.from_file(pst_file) as pst:
@@ -222,7 +234,7 @@ def pst_to_csv(pst_file):
 def merge_and_sort_csv_files(directory):
     csv_files = glob.glob(os.path.join(directory, '**', '*.csv'), recursive=True)
     all_data = []
-    fieldnames = ["folder_name", "sender_email", "receiver_emails", "cc_emails", "delivery_time_unixtime", "subject", "body", "attachments"]
+    fieldnames = ["folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "delivery_time", "subject", "body", "attachments"]
     num_files_merged = len(csv_files)
     
     for csv_file in csv_files:
@@ -231,7 +243,7 @@ def merge_and_sort_csv_files(directory):
             for row in reader:
                 all_data.append(row)
 
-    all_data.sort(key=lambda x: int(x['delivery_time_unixtime']) if x['delivery_time_unixtime'] else 0)
+    all_data.sort(key=lambda x: int(x['delivery_time']) if x['delivery_time'] else 0)
 
     merged_filename = os.path.join(".", 'extract.csv')
     with open(merged_filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
