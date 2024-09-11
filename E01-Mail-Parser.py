@@ -203,7 +203,7 @@ def display_message_info(messages, pst, folder_name, writer):
             "receiver_emails": "; ".join(receiver_emails).strip(),
             "cc_emails": mapi_message.display_cc if mapi_message.display_cc else '',
             "bcc_emails": mapi_message.display_bcc if mapi_message.display_bcc else '',
-            "delivery_time": int(mapi_message.delivery_time.strftime("%Y%m%d%H%M%S")) if mapi_message.delivery_time else '',
+            "delivery_time": int(mapi_message.delivery_time.strftime("%Y%m%d%H%M%S%f")) if mapi_message.delivery_time else '',
             "subject": mapi_message.subject if mapi_message.subject else '',
             "body": mapi_message.body[:2000] if mapi_message.body else '',
             "attachments": ", ".join([attachment.display_name for attachment in mapi_message.attachments]) if mapi_message.attachments else ''
