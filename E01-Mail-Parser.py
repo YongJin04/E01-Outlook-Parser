@@ -183,7 +183,7 @@ def load_pst_messages(pst, folder_name):
 def create_csv_for_pst(pst, pst_file, messages_info):
     csv_filename = f"{os.path.splitext(pst_file)[0]}.csv"
     with open(csv_filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
-        fieldnames = ["folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "bcc_emails", "delivery_time", "subject", "body", "attachments"]
+        fieldnames = ["folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "bcc_emails", "delivery_time_unixtime", "subject", "attachments", "body"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for folder_name, messages in messages_info.items():
@@ -203,10 +203,10 @@ def display_message_info(messages, pst, folder_name, writer):
             "receiver_emails": "; ".join(receiver_emails).strip(),
             "cc_emails": mapi_message.display_cc if mapi_message.display_cc else '',
             "bcc_emails": mapi_message.display_bcc if mapi_message.display_bcc else '',
-            "delivery_time": int(mapi_message.delivery_time.strftime("%Y%m%d%H%M%S%f")) if mapi_message.delivery_time else '',
+            "delivery_time_unixtime": int(mapi_message.delivery_time.replace(tzinfo=timezone.utc).timestamp()) if mapi_message.delivery_time else '',
             "subject": mapi_message.subject if mapi_message.subject else '',
-            "body": mapi_message.body[:2000] if mapi_message.body else '',
-            "attachments": ", ".join([attachment.display_name for attachment in mapi_message.attachments]) if mapi_message.attachments else ''
+            "attachments": ", ".join([attachment.display_name for attachment in mapi_message.attachments]) if mapi_message.attachments else '',
+            "body": mapi_message.body[:2000] if mapi_message.body else ''
         }
         writer.writerow(email_data)
 
@@ -235,7 +235,7 @@ def pst_to_csv(pst_file):
 def merge_and_sort_csv_files(directory):
     csv_files = glob.glob(os.path.join(directory, '**', '*.csv'), recursive=True)
     all_data = []
-    fieldnames = ["folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "bcc_emails", "delivery_time", "subject", "body", "attachments"]
+    fieldnames = ["folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "bcc_emails", "delivery_time_unixtime", "subject", "attachments", "body"]
     num_files_merged = len(csv_files)
     
     for csv_file in csv_files:
@@ -244,7 +244,7 @@ def merge_and_sort_csv_files(directory):
             for row in reader:
                 all_data.append(row)
 
-    all_data.sort(key=lambda x: int(x['delivery_time']) if x['delivery_time'] else 0)
+    all_data.sort(key=lambda x: int(x['delivery_time_unixtime']) if x['delivery_time_unixtime'] else 0)
 
     merged_filename = os.path.join(".", 'extract.csv')
     with open(merged_filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
