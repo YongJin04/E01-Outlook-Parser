@@ -1,5 +1,5 @@
 from aspose.email.storage.pst import PersonalStorage
-from datetime import timezone
+from datetime import timezone, timedelta
 import hashlib
 import pytsk3
 import pyewf
@@ -174,41 +174,60 @@ def E01_to_ost_and_pst(img_path):
         
 # ======================== pst_to_csv ======================== #
 
+def get_source_account(pst):
+    messages = load_pst_messages(pst, "Sent Items")
+    
+    if not messages:
+        return None
+    
+    first_message_info = messages[0]
+    first_message = pst.extract_message(first_message_info)
+
+    return first_message.sender_email_address if first_message.sender_email_address else None
+
 def load_pst_messages(pst, folder_name):
     folder = pst.root_folder.get_sub_folder(folder_name)
     if folder is None:
         return []
     return folder.get_contents()
 
-def create_csv_for_pst(pst, pst_file, messages_info):
+def create_csv_for_pst(pst, pst_file, messages_info, source_account):
     csv_filename = f"{os.path.splitext(pst_file)[0]}.csv"
     with open(csv_filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
-        fieldnames = ["folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "bcc_emails", "delivery_time_unixtime", "subject", "attachments", "body"]
+        fieldnames = ["source_account", "folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "bcc_emails", "delivery_time_unixtime", "subject", "attachments", "body"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for folder_name, messages in messages_info.items():
-            display_message_info(messages, pst, folder_name, writer)
+            display_message_info(messages, pst, folder_name, writer, source_account)
     csv_base_name = os.path.basename(csv_filename)
     print(f" -> {csv_base_name}")
     return csv_filename
 
-def display_message_info(messages, pst, folder_name, writer):
+def display_message_info(messages, pst, folder_name, writer, source_account):
     for message_info in messages:
         mapi_message = pst.extract_message(message_info)
-        receiver_emails = mapi_message.display_to.split(';') if mapi_message.display_to else ['']
         email_data = {
+            "source_account": source_account,
             "folder_name": folder_name,
-            "sender_email": mapi_message.sender_email_address if mapi_message.sender_email_address else '',
-            "sender_name": (format_kor_name(mapi_message.sender_name if mapi_message.sender_name else '')).replace(" ", ""),
-            "receiver_emails": "; ".join(receiver_emails).strip(),
-            "cc_emails": mapi_message.display_cc if mapi_message.display_cc else '',
-            "bcc_emails": mapi_message.display_bcc if mapi_message.display_bcc else '',
-            "delivery_time_unixtime": int(mapi_message.delivery_time.replace(tzinfo=timezone.utc).timestamp()) if mapi_message.delivery_time else '',
+            "sender_email": strip_quotes(mapi_message.sender_email_address) if mapi_message.sender_email_address else '',
+            "sender_name": format_kor_name(mapi_message.sender_name if mapi_message.sender_name else '').replace(" ", ""),
+            "receiver_emails": strip_quotes(";".join(mapi_message.display_to.split(';') if mapi_message.display_to else ['']).strip()),
+            "cc_emails": strip_quotes(mapi_message.display_cc if mapi_message.display_cc else ''),
+            "bcc_emails": strip_quotes(mapi_message.display_bcc if mapi_message.display_bcc else ''),
+            "delivery_time_unixtime": int(adjust_timezone(mapi_message.delivery_time, '-u9' in sys.argv).timestamp()),
             "subject": mapi_message.subject if mapi_message.subject else '',
             "attachments": ", ".join([attachment.display_name for attachment in mapi_message.attachments]) if mapi_message.attachments else '',
-            "body": mapi_message.body[:2000] if mapi_message.body else ''
+            "body": remove_double_spaces(mapi_message.body[:2000]) if mapi_message.body else ''
         }
         writer.writerow(email_data)
+
+def strip_quotes(text):
+    return text.strip("'")
+
+def adjust_timezone(dt, use_utc_plus_9):
+    if use_utc_plus_9:
+        return dt.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=9)))
+    return dt.replace(tzinfo=timezone.utc)
 
 def format_kor_name(name):
     parts = name.split()
@@ -221,21 +240,29 @@ def format_kor_name(name):
     else:
         return name
 
+def remove_double_spaces(body):
+    while '  ' in body:
+        body = body.replace('  ', ' ')
+    return body
+
 def pst_to_csv(pst_file):
     with PersonalStorage.from_file(pst_file) as pst:
+        source_account = get_source_account(pst)
+
         folder_names = ["Inbox", "Outbox", "Sent Items", "Deleted Items", "Drafts", "Junk Email"]
         messages_info = {}
         for folder_name in folder_names:
             messages = load_pst_messages(pst, folder_name)
             messages_info[folder_name] = messages
-        create_csv_for_pst(pst, pst_file, messages_info)
+
+        create_csv_for_pst(pst, pst_file, messages_info, source_account)
 
 # ==================== merge_and_sort_csv_files ==================== #
 
 def merge_and_sort_csv_files(directory):
     csv_files = glob.glob(os.path.join(directory, '**', '*.csv'), recursive=True)
     all_data = []
-    fieldnames = ["folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "bcc_emails", "delivery_time_unixtime", "subject", "attachments", "body"]
+    fieldnames = ["source_account", "folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "bcc_emails", "delivery_time_unixtime", "subject", "attachments", "body"]
     num_files_merged = len(csv_files)
     
     for csv_file in csv_files:
@@ -256,12 +283,14 @@ def merge_and_sort_csv_files(directory):
     print(f"\n{num_files_merged} CSV files merged and sorted into '{merged_filename}'\n")
 
 if __name__ == "__main__":
+    if '-u9' in sys.argv:
+        sys.argv.remove('-u9')
+    
     if len(sys.argv) < 2:
-        print("Usage: E01-Mail-Parser.exe <E01 file path 1> <E01 file path 2> ...")
+        print("Usage: E01-Mail-Parser.exe [-u9] <E01 file path 1> <E01 file path 2> ...")
         sys.exit(1)
     
     for img_file in sys.argv[1:]:
         E01_to_ost_and_pst(img_file)
     
     merge_and_sort_csv_files(os.path.join(".", "extracted_files"))
-    
