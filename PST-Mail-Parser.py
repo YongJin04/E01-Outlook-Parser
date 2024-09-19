@@ -1,9 +1,22 @@
-from aspose.email.storage.pst import PersonalStorage, StandardIpmFolder
-from aspose.email.mapi import MapiMessage, ContactSaveFormat
-from datetime import timezone
+from aspose.email.storage.pst import PersonalStorage
+from datetime import timezone, timedelta
 import glob
+import sys
 import csv
 import os
+        
+# ======================== pst_to_csv ======================== #
+
+def get_source_account(pst):
+    messages = load_pst_messages(pst, "Sent Items")
+    
+    if not messages:
+        return None
+    
+    first_message_info = messages[0]
+    first_message = pst.extract_message(first_message_info)
+
+    return first_message.sender_email_address if first_message.sender_email_address else None
 
 def load_pst_messages(pst, folder_name):
     folder = pst.root_folder.get_sub_folder(folder_name)
@@ -11,58 +24,109 @@ def load_pst_messages(pst, folder_name):
         return []
     return folder.get_contents()
 
-def display_message_info(messages, pst, folder_name, writer):
-    for message_info in messages:
-        mapi_message = pst.extract_message(message_info)  # Extract MapiMessage
-        # Extract and handle multiple recipients if any
-        receiver_emails = mapi_message.display_to.split(';') if mapi_message.display_to else ['']
-        
-        # Collect email data for CSV output
-        email_data = {
-            "folder_name": folder_name,
-            "sender_email": mapi_message.sender_email_address if mapi_message.sender_email_address else '',
-            "receiver_emails": "; ".join(receiver_emails).strip(),  # Join back for consistent CSV output, or handle individually
-            "cc_emails": mapi_message.display_cc if mapi_message.display_cc else '',
-            # "delivery_time_datetime": mapi_message.delivery_time if mapi_message.delivery_time else '',
-            "delivery_time_unixtime": int(mapi_message.delivery_time.replace(tzinfo=timezone.utc).timestamp()) if mapi_message.delivery_time else '',
-            "subject": mapi_message.subject if mapi_message.subject else '',
-            "body": mapi_message.body[:200] if mapi_message.body else '',
-            "attachments": ", ".join([attachment.display_name for attachment in mapi_message.attachments]) if mapi_message.attachments else ''
-        }
-        writer.writerow(email_data)
-
-def find_pst_files(directory):
-    # Search for all PST files in the specified directory
-    return glob.glob(os.path.join(directory, '**', '*.pst'), recursive=True)
-
-def create_csv_for_pst(pst_file, messages_info):
-    csv_filename = f"{os.path.splitext(pst_file)[0]}.csv"
-    with open(csv_filename, 'w', newline='', encoding='utf-8-sig') as csvfile:  # utf-8-sig for proper encoding in Excel
-        fieldnames = ["folder_name", "sender_email", "receiver_emails", "cc_emails", "delivery_time_datetime", "delivery_time_unixtime", "subject", "body", "attachments"]
+def create_csv_for_pst(pst, pst_file, messages_info, source_account):
+    print("AAA")
+    extracts_dir = './extracts'
+    os.makedirs(extracts_dir, exist_ok=True)
+    csv_filename = os.path.join(extracts_dir, f"{os.path.splitext(os.path.basename(pst_file))[0]}.csv")
+    with open(csv_filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
+        fieldnames = ["source_account", "folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "bcc_emails", "delivery_time_unixtime", "subject", "attachments", "body"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for folder_name, messages in messages_info.items():
-            display_message_info(messages, pst, folder_name, writer)
-    pst_base_name = os.path.basename(pst_file)
+            display_message_info(messages, pst, folder_name, writer, source_account)
     csv_base_name = os.path.basename(csv_filename)
-    print(f"CSV File Created : {os.path.dirname(csv_filename)}\\{pst_base_name} -> {csv_base_name}")  # Updated print statement
+    print(f"{pst_file} -> {csv_base_name}")
     return csv_filename
 
+def display_message_info(messages, pst, folder_name, writer, source_account):
+    for message_info in messages:
+        mapi_message = pst.extract_message(message_info)
+        email_data = {
+            "source_account": source_account,
+            "folder_name": folder_name,
+            "sender_email": strip_quotes(mapi_message.sender_email_address) if mapi_message.sender_email_address else '',
+            "sender_name": format_kor_name(mapi_message.sender_name if mapi_message.sender_name else '').replace(" ", ""),
+            "receiver_emails": strip_quotes(";".join(mapi_message.display_to.split(';') if mapi_message.display_to else ['']).strip()),
+            "cc_emails": strip_quotes(mapi_message.display_cc if mapi_message.display_cc else ''),
+            "bcc_emails": strip_quotes(mapi_message.display_bcc if mapi_message.display_bcc else ''),
+            "delivery_time_unixtime": int(adjust_timezone(mapi_message.delivery_time, '-u9' in sys.argv).timestamp()),
+            "subject": mapi_message.subject if mapi_message.subject else '',
+            "attachments": ", ".join([attachment.display_name for attachment in mapi_message.attachments]) if mapi_message.attachments else '',
+            "body": remove_double_spaces(mapi_message.body[:2000]) if mapi_message.body else ''
+        }
+        writer.writerow(email_data)
+
+def strip_quotes(text):
+    return text.strip("'")
+
+def adjust_timezone(dt, use_utc_plus_9):
+    if use_utc_plus_9:
+        return dt.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=9)))
+    return dt.replace(tzinfo=timezone.utc)
+
+def format_kor_name(name):
+    parts = name.split()
+    if len(parts) != 2:
+        return name
+    if len(parts[0]) == 1 and len(parts[1]) == 2:
+        return name
+    elif len(parts[0]) == 2 and len(parts[1]) == 1:
+        return parts[1] + ' ' + parts[0]
+    else:
+        return name
+
+def remove_double_spaces(body):
+    while '  ' in body:
+        body = body.replace('  ', ' ')
+    return body
+
+def pst_to_csv(pst_file):
+    with PersonalStorage.from_file(pst_file) as pst:
+        source_account = get_source_account(pst)
+
+        folder_names = ["Inbox", "Outbox", "Sent Items", "Deleted Items", "Drafts", "Junk Email"]
+        messages_info = {}
+        for folder_name in folder_names:
+            messages = load_pst_messages(pst, folder_name)
+            messages_info[folder_name] = messages
+
+        create_csv_for_pst(pst, pst_file, messages_info, source_account)
+
+# ==================== merge_and_sort_csv_files ==================== #
+
+def merge_and_sort_csv_files(directory):
+    csv_files = glob.glob(os.path.join(directory, '*.csv'))  # No recursive search needed
+    all_data = []
+    fieldnames = ["source_account", "folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "bcc_emails", "delivery_time_unixtime", "subject", "attachments", "body"]
+    num_files_merged = len(csv_files)
+    
+    for csv_file in csv_files:
+        with open(csv_file, 'r', newline='', encoding='utf-8-sig') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                all_data.append(row)
+
+    all_data.sort(key=lambda x: int(x['delivery_time_unixtime']) if x['delivery_time_unixtime'] else 0)
+
+    merged_filename = 'extract.csv'
+    with open(merged_filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for data in all_data:
+            writer.writerow(data)
+
+    print(f"\n{num_files_merged} CSV files merged and sorted into '{merged_filename}'\n")
+
 if __name__ == "__main__":
-    directory_path = os.path.join(".", "extracted_files")
-    pst_files = find_pst_files(directory_path)
-    total_emails = 0  # Initialize counter for total emails
-    csv_files_created = 0  # Counter for CSV files
-
-    for pst_file in pst_files:
-        with PersonalStorage.from_file(pst_file) as pst:
-            folder_names = ["Inbox", "Outbox", "Sent Items", "Deleted Items", "Drafts", "Junk Email"]
-            messages_info = {}
-            for folder_name in folder_names:
-                messages = load_pst_messages(pst, folder_name)
-                messages_info[folder_name] = messages
-                total_emails += len(messages)  # Sum up all messages
-            csv_file = create_csv_for_pst(pst_file, messages_info)  # Create a CSV file for each PST
-            csv_files_created += 1
-
-    print(f"\nTotal Number Of CSV Files Created / Parsed Emails: {csv_files_created}, {total_emails}\n")
+    if '-u9' in sys.argv:
+        sys.argv.remove('-u9')
+    
+    if len(sys.argv) < 2:
+        print("Usage: PST-Mail-Parser.exe [-u9] <PST file path 1> <PST file path 2> ...")
+        sys.exit(1)
+    
+    for pst_file in sys.argv[1:]:
+        pst_to_csv(pst_file)
+    
+    merge_and_sort_csv_files('./extracts')
