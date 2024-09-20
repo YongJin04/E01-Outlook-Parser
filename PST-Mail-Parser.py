@@ -4,11 +4,14 @@ import glob
 import sys
 import csv
 import os
-        
+
 # ======================== pst_to_csv ======================== #
 
 def get_source_account(pst):
     messages = load_pst_messages(pst, "Sent Items")
+    
+    if not messages:
+        messages = load_pst_messages(pst, "보낸 편지함")
     
     if not messages:
         return None
@@ -25,18 +28,19 @@ def load_pst_messages(pst, folder_name):
     return folder.get_contents()
 
 def create_csv_for_pst(pst, pst_file, messages_info, source_account):
-    print("AAA")
     extracts_dir = './extracts'
     os.makedirs(extracts_dir, exist_ok=True)
     csv_filename = os.path.join(extracts_dir, f"{os.path.splitext(os.path.basename(pst_file))[0]}.csv")
+    total_messages = 0
     with open(csv_filename, 'w', newline='', encoding='utf-8-sig') as csvfile:
         fieldnames = ["source_account", "folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "bcc_emails", "delivery_time_unixtime", "subject", "attachments", "body"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for folder_name, messages in messages_info.items():
+            total_messages += len(messages)
             display_message_info(messages, pst, folder_name, writer, source_account)
     csv_base_name = os.path.basename(csv_filename)
-    print(f"{pst_file} -> {csv_base_name}")
+    print(f"{pst_file} -> {csv_base_name} (export {total_messages} E-mails)")
     return csv_filename
 
 def display_message_info(messages, pst, folder_name, writer, source_account):
@@ -52,7 +56,7 @@ def display_message_info(messages, pst, folder_name, writer, source_account):
             "bcc_emails": strip_quotes(mapi_message.display_bcc if mapi_message.display_bcc else ''),
             "delivery_time_unixtime": int(adjust_timezone(mapi_message.delivery_time, '-u9' in sys.argv).timestamp()),
             "subject": mapi_message.subject if mapi_message.subject else '',
-            "attachments": ", ".join([attachment.display_name for attachment in mapi_message.attachments]) if mapi_message.attachments else '',
+            "attachments": ", ".join([attachment.display_name for attachment in mapi_message.attachments if attachment.display_name]),
             "body": remove_double_spaces(mapi_message.body[:2000]) if mapi_message.body else ''
         }
         writer.writerow(email_data)
@@ -85,7 +89,7 @@ def pst_to_csv(pst_file):
     with PersonalStorage.from_file(pst_file) as pst:
         source_account = get_source_account(pst)
 
-        folder_names = ["Inbox", "Outbox", "Sent Items", "Deleted Items", "Drafts", "Junk Email"]
+        folder_names = ["Inbox", "Outbox", "Sent Items", "Deleted Items", "Drafts", "Junk Email", "받은 편지함", "보낼 편지함", "보낸 편지함", "삭제된 항목", "정크 메일"]
         messages_info = {}
         for folder_name in folder_names:
             messages = load_pst_messages(pst, folder_name)
@@ -96,7 +100,7 @@ def pst_to_csv(pst_file):
 # ==================== merge_and_sort_csv_files ==================== #
 
 def merge_and_sort_csv_files(directory):
-    csv_files = glob.glob(os.path.join(directory, '*.csv'))  # No recursive search needed
+    csv_files = glob.glob(os.path.join(directory, '*.csv'))
     all_data = []
     fieldnames = ["source_account", "folder_name", "sender_email", "sender_name", "receiver_emails", "cc_emails", "bcc_emails", "delivery_time_unixtime", "subject", "attachments", "body"]
     num_files_merged = len(csv_files)
@@ -116,7 +120,8 @@ def merge_and_sort_csv_files(directory):
         for data in all_data:
             writer.writerow(data)
 
-    print(f"\n{num_files_merged} CSV files merged and sorted into '{merged_filename}'\n")
+    total_rows = len(all_data)
+    print(f"\n{num_files_merged} CSV files merged and sorted into '{merged_filename}' ({total_rows} E-mails)\n")
 
 if __name__ == "__main__":
     if '-u9' in sys.argv:
