@@ -4,6 +4,7 @@ import glob
 import sys
 import csv
 import os
+import re
 
 # ======================== pst_to_csv ======================== #
 
@@ -48,7 +49,7 @@ def display_message_info(messages, pst, folder_name, writer, source_account):
         mapi_message = pst.extract_message(message_info)
         email_data = {
             "source_account": source_account,
-            "folder_name": folder_name,
+            "folder_name": translate_folder_name(folder_name),
             "sender_email": strip_quotes(mapi_message.sender_email_address) if mapi_message.sender_email_address else '',
             "sender_name": format_kor_name(mapi_message.sender_name if mapi_message.sender_name else '').replace(" ", ""),
             "receiver_emails": strip_quotes(";".join(mapi_message.display_to.split(';') if mapi_message.display_to else ['']).strip()),
@@ -57,9 +58,20 @@ def display_message_info(messages, pst, folder_name, writer, source_account):
             "delivery_time_unixtime": int(adjust_timezone(mapi_message.delivery_time, '-u9' in sys.argv).timestamp()),
             "subject": mapi_message.subject if mapi_message.subject else '',
             "attachments": ", ".join([attachment.display_name for attachment in mapi_message.attachments if attachment.display_name]),
-            "body": remove_double_spaces(mapi_message.body[:2000]) if mapi_message.body else ''
+            "body": remove_double_spaces(extract_recent_content(mapi_message.body[:2000])) if mapi_message.body else ''
         }
         writer.writerow(email_data)
+
+def translate_folder_name(folder_name):
+    folder_map = {
+        "Inbox": "받은 편지함",
+        "Outbox": "보낼 편지함",
+        "Sent Items": "보낸 편지함",
+        "Deleted Items": "삭제된 항목",
+        "Drafts": "임시 보관함",
+        "Junk Email": "정크 메일"
+    }
+    return folder_map.get(folder_name, folder_name)
 
 def strip_quotes(text):
     return text.strip("'")
@@ -79,6 +91,23 @@ def format_kor_name(name):
         return parts[1] + ' ' + parts[0]
     else:
         return name
+    
+def extract_recent_content(body: str) -> str:
+    lines = body.splitlines()
+    result = []
+    
+    for i, line in enumerate(lines):
+        if line[:5] == "From:":
+            for j in range(1, 4):
+                if i + j < len(lines):
+                    sub_line = lines[i + j]
+                    if sub_line[:5] == "Sent:" or sub_line[:3] == "To:" or sub_line[:8] == "Subject:":
+                        return "\n".join(result)
+            break
+        else:
+            result.append(line)
+    
+    return "\n".join(result)
 
 def remove_double_spaces(body):
     while '  ' in body:
